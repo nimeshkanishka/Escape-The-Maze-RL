@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "escape_the_maze"
+version = "0.0.1"
+authors = [
+  { name = "Nimesh Kanishka" }
+]
+requires-python = ">=3.10"
+dependencies = [
+  "gymnasium",
+  "numpy",
+  "pygame"
+]
+
+[project.urls]
+Homepage = "https://github.com/nimeshkanishka/Escape-The-Maze-RL"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]

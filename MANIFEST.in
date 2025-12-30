@@ -1,0 +1,1 @@
+recursive-include escape_the_maze/envs/assets *.png *.csv *.ttf

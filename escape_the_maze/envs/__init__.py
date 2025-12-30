@@ -1,0 +1,1 @@
+from escape_the_maze.envs.escape_the_maze import EscapeTheMazeEnv
