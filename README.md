@@ -105,12 +105,17 @@ env = gym.make("EscapeTheMaze-v0", render_mode=None, map_csv=None)
 ```
 
 - ```render_mode: str | None = None```
+
   Render mode of the environment.
+  
   ```render_mode="human"``` visualizes the environment using [pygame](https://www.pygame.org/wiki/about).
 
 - ```map_csv: str | Path | None = None```
+
   Path to a CSV file defining the maze layout.
+
   The CSV should be 2D with the following encoding:
+
   | Value   | Meaning           |
   |---------|-------------------|
   | ```0``` | Empty cell        |
@@ -119,7 +124,8 @@ env = gym.make("EscapeTheMaze-v0", render_mode=None, map_csv=None)
   | ```3``` | Gold              |
   | ```4``` | Diamond           |
   | ```5``` | Exit              |
-  If ```map_csv=None```, the default layout will be used.
+
+  If ```None```, the default layout will be used.
 
 ### Version History
 
