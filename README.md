@@ -1,5 +1,7 @@
 # Escape The Maze: A Custom [Gymnasium](https://gymnasium.farama.org/index.html) Environment for Reinforcement Learning
 
+Thanks to [Python Simplified on YouTube](https://www.youtube.com/@PythonSimplified) for the idea. This is essentially an implementation of the example environment in her reinforcement learning explanation [video](https://youtu.be/sgsQZmlJbSY).
+
 ## Installation
 
 1. Clone the repository
@@ -103,27 +105,21 @@ env = gym.make("EscapeTheMaze-v0", render_mode=None, map_csv=None)
 ```
 
 - ```render_mode: str | None = None```
-
-Render mode of the environment.
-
-```render_mode="human"``` visualizes the environment using [pygame](https://www.pygame.org/wiki/about).
+  Render mode of the environment.
+  ```render_mode="human"``` visualizes the environment using [pygame](https://www.pygame.org/wiki/about).
 
 - ```map_csv: str | Path | None = None```
-
-Path to a CSV file defining the maze layout.
-
-The CSV should be 2D with the following encoding:
-
-| Value   | Meaning           |
-|---------|-------------------|
-| ```0``` | Empty cell        |
-| ```1``` | Wall              |
-| ```2``` | Starting position |
-| ```3``` | Gold              |
-| ```4``` | Diamond           |
-| ```5``` | Exit              |
-
-If ```None```, the default layout will be used.
+  Path to a CSV file defining the maze layout.
+  The CSV should be 2D with the following encoding:
+  | Value   | Meaning           |
+  |---------|-------------------|
+  | ```0``` | Empty cell        |
+  | ```1``` | Wall              |
+  | ```2``` | Starting position |
+  | ```3``` | Gold              |
+  | ```4``` | Diamond           |
+  | ```5``` | Exit              |
+  If ```map_csv=None```, the default layout will be used.
 
 ### Version History
 
