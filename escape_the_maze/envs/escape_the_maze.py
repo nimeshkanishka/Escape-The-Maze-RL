@@ -36,6 +36,7 @@ class EscapeTheMazeEnv(gym.Env):
         self.grid = None
         self.agent_position = None
         self.is_electrocuted = None
+        self.last_action = None
         self.gold_collected = None
         self.diamonds_collected = None
         self.times_electrocuted = None
@@ -44,7 +45,9 @@ class EscapeTheMazeEnv(gym.Env):
         self.screen = None
         self.clock = None
         self.cell_size = 32
+        self.grid_offset = (100, 50, 100, 100) # top, bottom, left, right
         self.screen_size = None
+        self.wall_width = 8
         self.agent_img = None
         self.gold_img = None
         self.diamond_img = None
@@ -80,6 +83,7 @@ class EscapeTheMazeEnv(gym.Env):
 
         # Reset other variables
         self.is_electrocuted = False
+        self.last_action = None
         self.gold_collected = 0
         self.diamonds_collected = 0
         self.times_electrocuted = 0
@@ -93,6 +97,9 @@ class EscapeTheMazeEnv(gym.Env):
             raise ValueError(
                 f"Invalid action ({action}). Action must be an integer in [0, 3]."
             )
+        
+        # Save the action taken
+        self.last_action = action
 
         # Penalty for each step taken
         reward = -0.25
@@ -112,6 +119,9 @@ class EscapeTheMazeEnv(gym.Env):
             # If the agent is electrocuted (by hitting a wall), penalize the agent
             self.is_electrocuted = True
             self.times_electrocuted += 1
+            # We call render twice in the same step to show the agent hitting the wall
+            self.render()
+            self.is_electrocuted = False
             reward -= 1.0
 
         else:
@@ -186,8 +196,8 @@ class EscapeTheMazeEnv(gym.Env):
             pygame.init()
             
             self.screen_size = (
-                w * self.cell_size + 200,
-                h * self.cell_size + 150
+                self.grid_offset[2] + w * self.cell_size + self.grid_offset[3],
+                self.grid_offset[0] + h * self.cell_size + self.grid_offset[1]
             )
             self.screen = pygame.display.set_mode(self.screen_size)
             pygame.display.set_caption("Escape The Maze")
@@ -232,6 +242,10 @@ class EscapeTheMazeEnv(gym.Env):
         electrocutions_text = self.font.render(str(self.times_electrocuted), True, (255, 255, 255))
         self.screen.blit(electrocutions_text, (self.screen_size[0] - 50, 15))
 
+        # Color of the walls based on whether the agent is being electrocuted
+        # Yellow if electrocuted, blue otherwise
+        wall_color = (210, 225, 0) if self.is_electrocuted else (65, 130, 255)
+
         # Loop over each cell on the grid
         for y in range(h):
             for x in range(w):
@@ -242,34 +256,89 @@ class EscapeTheMazeEnv(gym.Env):
                 if cell_value == 0:
                     continue
 
-                # Draw walls in yellow if the agent is being electrocuted or blue otherwise
+                # Draw walls
                 elif cell_value == 1:
-                    color = (210, 225, 0) if self.is_electrocuted else (65, 130, 255)
-                    pygame.draw.rect(
-                        self.screen,
-                        color,
-                        pygame.Rect(
-                            100 + x * self.cell_size,
-                            100 + y * self.cell_size,
-                            self.cell_size,
-                            self.cell_size
-                        )
-                    )
+                    # Offsets of neighboring cells (up, down, left, right)
+                    neighbor_offsets = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                    # Offsets from the cell origin (top left of the cell) to the wall origins
+                    # (top left of the rectangles) for drawing wall segments joining each of
+                    # the neighboring cells (up, down, left, right)
+                    left_top_offsets = [
+                        (self.cell_size // 2 - self.wall_width // 2, 0),
+                        (self.cell_size // 2 - self.wall_width // 2, self.cell_size // 2 - self.wall_width // 2),
+                        (0, self.cell_size // 2 - self.wall_width // 2),
+                        (self.cell_size // 2 - self.wall_width // 2, self.cell_size // 2 - self.wall_width // 2)
+                    ]
+                    # Width and height of wall segments (rectangles) joining each of the
+                    # neighboring cells (up, down, left, right)
+                    width_height = [
+                        (self.wall_width, self.cell_size // 2 + self.wall_width // 2),
+                        (self.wall_width, self.cell_size // 2 + self.wall_width // 2),
+                        (self.cell_size // 2 + self.wall_width // 2, self.wall_width),
+                        (self.cell_size // 2 + self.wall_width // 2, self.wall_width)
+                    ]
 
-                # Draw agent, gold, diamond and flag sprites
+                    # Loop over each of the 4 neighboring cells
+                    for i, (dy, dx) in enumerate(neighbor_offsets):
+                        # x and y coordinates of neighboring cell
+                        ny, nx = y + dy, x + dx
+
+                        # Ensure the neighboring cell is within bounds
+                        if 0 <= ny < h and 0 <= nx < w:
+
+                            # If the neighboring cell has a wall, draw a wall segment (rectangle)
+                            # joining the border of the current cell towards the neighboring cell
+                            # with the center of the current cell
+                            if self.grid[ny, nx] == 1:
+                                pygame.draw.rect(
+                                    self.screen,
+                                    wall_color,
+                                    pygame.Rect(
+                                        self.grid_offset[2] + x * self.cell_size + left_top_offsets[i][0],
+                                        self.grid_offset[0] + y * self.cell_size + left_top_offsets[i][1],
+                                        width_height[i][0],
+                                        width_height[i][1]
+                                    )
+                                )
+
+                # Draw the agent
+                elif cell_value == 2:
+                    # x and y coordinates to draw the agent
+                    agent_coords = [
+                        self.grid_offset[2] + x * self.cell_size,
+                        self.grid_offset[0] + y * self.cell_size
+                    ]
+
+                    # If the agent is trying to move to a cell with a wall, shift the coordinates
+                    if self.is_electrocuted:
+                        match self.last_action:
+                            case 0:
+                                agent_coords[1] -= self.cell_size // 2 - self.wall_width // 2
+                            case 1:
+                                agent_coords[1] += self.cell_size // 2 - self.wall_width // 2
+                            case 2:
+                                agent_coords[0] -= self.cell_size // 2 - self.wall_width // 2
+                            case 3:
+                                agent_coords[0] += self.cell_size // 2 - self.wall_width // 2
+
+                    self.screen.blit(self.agent_img, tuple(agent_coords))
+
+                # Draw gold, diamond and flag sprites
                 else:
                     match cell_value:
-                        case 2:
-                            img = self.agent_img
                         case 3:
                             img = self.gold_img
                         case 4:
                             img = self.diamond_img
                         case 5:
                             img = self.flag_img
+
                     self.screen.blit(
                         img,
-                        (100 + x * self.cell_size, 100 + y * self.cell_size)
+                        (
+                            self.grid_offset[2] + x * self.cell_size,
+                            self.grid_offset[0] + y * self.cell_size
+                        )
                     )
 
         pygame.display.flip()
