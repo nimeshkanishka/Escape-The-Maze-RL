@@ -28,42 +28,123 @@ import escape_the_maze
 env = gym.make("EscapeTheMaze-v0", render_mode="human")
 
 observation, info = env.reset()
-total_steps = 0
-total_reward = 0
-done = False
+episode_length = 0
+episode_reward = 0
+terminated, truncated = False, False
 
-while not done:
+while not (terminated or truncated)
     # Take a random action
     action = env.action_space.sample()
     observation, reward, terminated, truncated, info = env.step(action)
-    total_steps += 1
-    total_reward += reward
-    done = terminated or truncated
+    episode_length += 1
+    episode_reward += reward
 
-print(f"Episode finished in {total_steps} steps with total reward {total_reward}.")
+print(f"Episode finished in {episode_length} steps with total reward {episode_reward}.")
 
 env.close()
 ```
 
-The example below demonstrates how to train an agent on the environment using [Stable Baselines3](https://stable-baselines3.readthedocs.io/en/master/)'s [DQN](https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html) algorithm.
+The example below demonstrates how to train and visualize an agent on the environment using [Stable Baselines3](https://stable-baselines3.readthedocs.io/en/master/)'s [DQN](https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html) algorithm.
 
 ```python
 import gymnasium as gym
 import escape_the_maze
 from stable_baselines3 import DQN
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import EvalCallback
+import numpy as np
 
-env = gym.make("EscapeTheMaze-v0")
+def train(
+    total_timesteps: int = 2_000_000,
+    num_parallel_envs: int = 8,
+    seed: int | None = None,
+    device: str = "auto"
+) -> None:
+    # Vectorized environment for training
+    env = make_vec_env(
+        env_id="EscapeTheMaze-v0",
+        n_envs=num_parallel_envs,
+        seed=seed,
+        vec_env_cls=DummyVecEnv
+    )
 
-model = DQN(
-    policy="MlpPolicy",
-    env=env,
-    buffer_size=250_000,
-    exploration_fraction=0.5,
-    exploration_final_eps=0.02
-)
+    # Evaluation environment
+    eval_env = gym.make("EscapeTheMaze-v0")
 
-model.learn(total_timesteps=1_000_000)
-model.save("escape_the_maze_agent")
+    # SB3's DQN algorithm for training
+    model = DQN(
+        policy="MlpPolicy",
+        env=env,
+        buffer_size=500_000,
+        learning_starts=10_000,
+        batch_size=64,
+        target_update_interval=5_000,
+        exploration_fraction=0.5,
+        tensorboard_log="logs", # directory to save tensorboard logs
+        seed=seed,
+        device=device
+    )
+    
+    # Perform an evaluation every 20k steps (2500 * 8) and save model checkpoint if reward has improved
+    eval_callback = EvalCallback(
+        eval_env=eval_env,
+        eval_freq=2500,
+        best_model_save_path="models" # directory to save model checkpoints
+    )
+
+    # Train the model
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=eval_callback,
+        reset_num_timesteps=False,
+        progress_bar=True
+    )
+
+def eval(
+    total_episodes: int,
+    render: bool = True,
+    device: str = "auto"
+) -> None:
+    env = gym.make("EscapeTheMaze-v0", render_mode="human" if render else None)
+
+    # Load the saved best model checkpoint
+    model = DQN.load(
+        path="models/best_model",
+        device=device
+    )
+
+    episode_length_history = []
+    episode_reward_history = []
+
+    for episode in range(total_episodes):
+        observation, _ = env.reset()
+        episode_length = 0
+        episode_reward = 0
+        terminated, truncated = False, False
+
+        while not (terminated or truncated):
+            action, _ = model.predict(observation=observation, deterministic=True)
+
+            observation, reward, terminated, truncated, _ = env.step(action)
+
+            episode_length += 1
+            episode_reward += reward
+
+        episode_length_history.append(episode_length)
+        episode_reward_history.append(episode_reward)
+        print(f"Episode: {episode + 1}/{total_episodes} - Length: {episode_length} - Reward: {episode_reward:.2f}")
+
+    print(f"\n{total_episodes} episodes completed!")
+    print(f"Episode length: {np.mean(episode_length_history):.2f} +/- {np.std(episode_length_history):.2f}")
+    print(f"Episode reward: {np.mean(episode_reward_history):.2f} +/- {np.std(episode_reward_history):.2f}")
+
+if __name__ == "__main__":
+    # Train for 2M timesteps
+    train()
+
+    # Watch the trained agent play 5 episodes
+    eval(total_episodes=5)
 ```
 
 ## Environment Details
@@ -78,27 +159,27 @@ The observation is a ```ndarray``` of shape ```(51,)```, where the first 49 elem
 
 The grid values have the following encoding:
 
-  | Value    | Meaning           |
-  |----------|-------------------|
-  | ```-1``` | Out of bounds     |
-  | ```0```  | Empty             |
-  | ```1```  | Wall              |
-  | ```2```  | Agent             |
-  | ```3```  | Gold              |
-  | ```4```  | Diamond           |
-  | ```5```  | Exit              |
+| Value    | Meaning           |
+|----------|-------------------|
+| ```-1``` | Out of bounds     |
+| ```0```  | Empty             |
+| ```1```  | Wall              |
+| ```2```  | Agent             |
+| ```3```  | Gold              |
+| ```4```  | Diamond           |
+| ```5```  | Exit              |
 
 ### Action Space
 
 There are 4 discrete actions:
 
-  ```0```: Move up
+```0```: Move up
 
-  ```1```: Move down
+```1```: Move down
 
-  ```2```: Move left
+```2```: Move left
 
-  ```3```: Move right
+```3```: Move right
 
 ### Rewards
 
