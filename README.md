@@ -70,27 +70,39 @@ model.save("escape_the_maze_agent")
 
 ### Description
 
-The robot wakes up in a maze. There is only one exit. He must find it as soon as possible but any wrong move could be costly. Touching a wall is not an option; he will get electrocuted. He must collect as many gold chunks and diamonds before he leaves the maze. But there is only a limited time to escape the maze. If he does not escape in time... 💀
+The robot wakes up in a maze. There's an exit but he doesn't know where it is. He must find it as soon as possible but any wrong move could be costly. He will get electrocuted if he touches a wall. He must collect as many gold chunks and diamonds before he leaves the maze. But there is only a limited time to escape the maze. If he does not escape in time... 💀
 
 ### Observation Space
 
-The observation, a ```ndarray``` with shape ```(3, 3)```, is a 3x3 grid around the agent consisting of the state (```-1```: Out of bounds, ```0```: Empty, ```1```: Wall, ```2```: Agent, ```3```: Gold, ```4```: Diamond, ```5```: Exit) of each cell.
+The observation is a ```ndarray``` of shape ```(51,)```, where the first 49 elements contain a flattened 7x7 grid around the agent and the last 2 elements are the number of gold chunks and diamonds collected by the agent.
+
+The grid values have the following encoding:
+
+  | Value    | Meaning           |
+  |----------|-------------------|
+  | ```-1``` | Out of bounds     |
+  | ```0```  | Empty             |
+  | ```1```  | Wall              |
+  | ```2```  | Agent             |
+  | ```3```  | Gold              |
+  | ```4```  | Diamond           |
+  | ```5```  | Exit              |
 
 ### Action Space
 
 There are 4 discrete actions:
 
-```0```: Move up
+  ```0```: Move up
 
-```1```: Move down
+  ```1```: Move down
 
-```2```: Move left
+  ```2```: Move left
 
-```3```: Move right
+  ```3```: Move right
 
 ### Rewards
 
-The agent is rewarded for collecting gold chunks (```+1.5```) and diamonds (```+2```). A penalty of ```-1``` is given for getting electrocuted (hitting a wall). Aditionally, a small penalty (```-0.25```) is given for each passing timestep. Finding the exit before the end of the episode will be rewarded with ```+10```.
+The agent is rewarded for exploring new cells (```+0.02```) and penalized for visiting already visited cells (```-0.01 * number_of_times_visited```; capped at ```-0.05```). Collecting gold chunks and diamonds is rewarded with ```+1.0``` and ```+2.0``` respectively. A penalty of ```-0.5``` is given for getting electrocuted (hitting a wall). Finding the exit before the end of the episode will be rewarded with ```+5.0```, with an extra bonus for each gold chunk (```+3.0```) and diamond (```+5.0```) collected.
 
 ### Episode End
 
@@ -128,5 +140,7 @@ env = gym.make("EscapeTheMaze-v0", render_mode=None, map_csv=None)
   If ```None```, the default layout will be used.
 
 ### Version History
+
+v1: Change observation space and reward function
 
 v0: Initial version

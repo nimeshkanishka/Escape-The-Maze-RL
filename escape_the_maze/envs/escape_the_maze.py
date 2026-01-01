@@ -29,12 +29,18 @@ class EscapeTheMazeEnv(gym.Env):
             map_path = files("escape_the_maze.envs").joinpath("assets/maps/level1.csv")
         # Load grid values from CSV file
         self.grid_values = np.loadtxt(map_path, dtype=int, delimiter=",")
+        # Ensure the grid is 2D
         if self.grid_values.ndim != 2:
             raise ValueError("Map CSV must be 2D.")
+        
+        # Number of gold chunks and diamonds in the maze
+        num_gold_chunks = np.argwhere(self.grid_values == 3).shape[0]
+        num_diamonds = np.argwhere(self.grid_values == 4).shape[0]
         
         # Initialize variables
         self.grid = None
         self.agent_position = None
+        self.times_visited = None
         self.is_electrocuted = None
         self.last_action = None
         self.gold_collected = None
@@ -46,8 +52,8 @@ class EscapeTheMazeEnv(gym.Env):
         self.clock = None
         self.cell_size = 32
         self.grid_offset = (100, 50, 100, 100) # top, bottom, left, right
-        self.screen_size = None
         self.wall_width = 8
+        self.screen_size = None
         self.agent_img = None
         self.gold_img = None
         self.diamond_img = None
@@ -58,12 +64,14 @@ class EscapeTheMazeEnv(gym.Env):
         self.font = None
         
         # Observation space
-        # This is a 3x3 grid around the agent
+        # This contains a flattened 7x7 grid around the agent (first 49 elements of the observation vector)
+        # and the number of gold chunks and diamonds collected by the agent (last 2 elements)
+        # The grid values have the following encoding:
         # -1: Out of bounds, 0: Empty, 1: Wall, 2: Agent, 3: Gold, 4: Diamond, 5: Exit
         self.observation_space = gym.spaces.Box(
             low=-1,
-            high=5,
-            shape=(3, 3),
+            high=max(num_gold_chunks, num_diamonds, 5),
+            shape=(51,),
             dtype=np.int8
         )
 
@@ -80,6 +88,12 @@ class EscapeTheMazeEnv(gym.Env):
 
         # Set agent position to starting position
         self.agent_position = tuple(np.argwhere(self.grid == 2)[0])
+        ay, ax = self.agent_position
+
+        # At the start of the episode, the agent hasnt visited any cells
+        self.times_visited = np.zeros(self.grid.shape, dtype=np.uint8)
+        # Mark the cell it starts on as visited
+        self.times_visited[ay, ax] += 1
 
         # Reset other variables
         self.is_electrocuted = False
@@ -98,11 +112,11 @@ class EscapeTheMazeEnv(gym.Env):
                 f"Invalid action ({action}). Action must be an integer in [0, 3]."
             )
         
-        # Save the action taken
+        # Save the action
+        # This is needed for animating the agent hitting walls and getting electrocuted
         self.last_action = action
 
-        # Penalty for each step taken
-        reward = -0.25
+        reward = 0.0
         terminated = False
 
         # Offsets of neighboring cells (up, down, left, right)
@@ -113,41 +127,54 @@ class EscapeTheMazeEnv(gym.Env):
             self.agent_position[0] + neighbor_offsets[action][0],
             self.agent_position[1] + neighbor_offsets[action][1]
         )
+
+        ay, ax = self.agent_position
         ny, nx = new_position
 
         if self.grid[ny, nx] == 1:
-            # If the agent is electrocuted (by hitting a wall), penalize the agent
+            # If the agent is trying to move to a cell with a wall, animate the agent
+            # getting electrocuted by calling render while is_electrocuted flag is True
             self.is_electrocuted = True
             self.times_electrocuted += 1
-            # We call render twice in the same step to show the agent hitting the wall
             self.render()
+            # Reset the flag and penalize the agent
             self.is_electrocuted = False
-            reward -= 1.0
+            reward -= 0.5
 
         else:
             # If the agent is moving to another cell, mark the cell it was on as empty
-            ay, ax = self.agent_position
             self.grid[ay, ax] = 0
 
-            # Update agent position
+            # Update agent's position
             self.agent_position = new_position
 
-            # Reset is_electrocuted flag
-            self.is_electrocuted = False
+            # If the agent has moved to a cell it has never been to before,
+            # give a small reward to encourage exploration
+            if self.times_visited[ny, nx] == 0:
+                reward += 0.02
+            # Otherwise, penalize the agent for visiting an already visited cell
+            # This penalty depends on how many times it has visited the same cell previously
+            # It is capped at -0.05 to ensure it is not too large
+            else:
+                reward -= min(0.01 * self.times_visited[ay, ax], 0.05)
+            # Mark the cell as visited
+            self.times_visited[ny, nx] += 1
 
             # If the agent collects a gold chunk, reward the agent
             if self.grid[ny, nx] == 3:
                 self.gold_collected += 1
-                reward += 1.5
+                reward += 1.0
             
             # If the agent collects a diamond, reward the agent
-            if self.grid[ny, nx] == 4:
+            elif self.grid[ny, nx] == 4:
                 self.diamonds_collected += 1
                 reward += 2.0
 
             # If the agent reaches the exit, reward the agent and terminate the episode
-            if self.grid[ny, nx] == 5:
-                reward += 10.0
+            # There is an extra bonus for each gold chunk (+3) and diamond (+5) collected to
+            # encourage the agent to explore the maze rather than exiting as fast as possible
+            elif self.grid[ny, nx] == 5:
+                reward += 5 + 3 * self.gold_collected + 5 * self.diamonds_collected
                 terminated = True
 
             # Mark agent's new position on the grid
@@ -164,23 +191,30 @@ class EscapeTheMazeEnv(gym.Env):
         return
 
     def _get_observation(self):
-        # Initialize observation array with -1 (out of bounds)
-        obs = np.full((3, 3), -1, dtype=np.int8)
+        # Initialize local grid with -1 (out of bounds)
+        grid = np.full(shape=(7, 7), fill_value=-1, dtype=np.int8)
 
-        ay, ax = self.agent_position
         h, w = self.grid.shape
+        ay, ax = self.agent_position
 
-        # Loop over each cell on a 3x3 grid around the agent
-        for dy in range(-1, 2):
-            for dx in range(-1, 2):
+        # Loop over each cell on a 7x7 grid around the agent
+        for dy in range(-3, 4):
+            for dx in range(-3, 4):
                 # Calculate x and y coordinates of each cell
                 y, x = ay + dy, ax + dx
 
-                # If the cell is within bounds, set its value in the observation
+                # If the cell is within bounds, set its value in the grid
                 if 0 <= y < h and 0 <= x < w:
-                    obs[dy + 1, dx + 1] = self.grid[y, x]
+                    grid[dy + 3, dx + 3] = self.grid[y, x]
 
-        return obs
+        # The observation vector also contains the number of gold chunks and diamonds collected so far
+        loot = np.array(
+            [self.gold_collected, self.diamonds_collected],
+            dtype=np.int8
+        )
+
+        # Return the full observation vector
+        return np.concatenate((grid.flatten(), loot), axis=0)
 
     def _render_human(self):
         h, w = self.grid.shape
